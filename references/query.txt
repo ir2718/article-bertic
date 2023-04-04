@@ -1,0 +1,11 @@
+# query za izvuc 30000 najnovijih redaka:
+select id, title, body, date_published, features_qids from article order by date_published DESC limit 30000;
+
+# query za izvuc 30000 najnovijih redaka + bacit to u docker
+\copy (select id, title, body, portal, date_published, features_qids from article order by date_published desc limit 30000) to '/textual_similarity_recent.csv' with csv delimiter ',' header;
+
+# prebacivanje filea iz remote docker containera u lokalni filesystem na serveru
+# 1. prebaci iz remote docker containera u host filesystem
+irep@suncica:~$ docker cp d011fc02f683:/textual_similarity_recent.csv textual_similarity_recent.csv
+# 2. prebaci iz host filesystema u domaci
+scp suncica.takelab.fer.hr:/home/irep/textual_similarity_recent.csv textual_similarity_recent.csv

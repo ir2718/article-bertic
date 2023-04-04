@@ -162,6 +162,6 @@ cython_debug/
 
 
 ######### mine ##############
-src/models/embeddings/
-data/data/sampled_data/
-data/data/similarity_dataset/
+models/embeddings/
+data/sampled_data/
+data/similarity_dataset/

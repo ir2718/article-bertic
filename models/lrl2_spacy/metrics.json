@@ -1,0 +1,1 @@
+{"train_spearman": 0.8401159397796043, "train_pearson": 0.731818179900645, "validation_spearman": 0.2936126403378951, "validation_pearson": 0.22823901321281553, "test_spearman": 0.2657712151209608, "test_pearson": 0.2745811171904688}
