@@ -3,7 +3,6 @@ from torch.nn.functional import (
     cosine_similarity, 
     mse_loss,
     binary_cross_entropy_with_logits,
-    cosine_embedding_loss,
     softmax
 )
 from transformers import AutoModel, AutoTokenizer, AutoConfig
@@ -23,9 +22,9 @@ def get_model(loss, **model_kwargs):
         Loss.CROSS_ENTROPY_LOSS: CrossEntropyArticleEmbeddingModel,
         Loss.COSINE_SIMILARITY_LOSS: CosineSimilarityArticleEmbeddingModel,
     }
-    
+
     model = d[loss](loss_name=loss, **model_kwargs)
-    
+
     return model
 
 def get_pooling_layer(pooling_type):
@@ -59,7 +58,6 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, config=self.config, use_fast=False)
         self.model = AutoModel.from_pretrained(model_name, config=self.config)
 
-        self.define_embedding_layer()
         self.pooling_layer = get_pooling_layer(pooling_type)
         
         self.val_steps = val_steps
@@ -83,9 +81,9 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         return out
     
     def init_metric_dict(self):
-        self.test_metric_dict = {"spearman":[], "pearson":[]}
-        self.val_metric_dict = {"spearman":[], "pearson":[]}
-        self.train_metric_dict = {"spearman":[], "pearson":[]}
+        self.test_metric_dict = {"spearman": [], "pearson": []}
+        self.val_metric_dict = {"spearman": [], "pearson": []}
+        self.train_metric_dict = {"spearman": [], "pearson": []}
         
     def compute_metrics(self, outputs, targets):
         outputs = self.postprocess(outputs).detach().cpu().numpy().flatten()
@@ -96,21 +94,24 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             "pearson": pearsonr(outputs, targets)[0]
         }
         
+    def inputs_to_device(self, batch):
+        return {k:v.to(self.device) for k, v in batch.items()}
+        
     def train_model(self, num_epochs, train_dataloader, validation_dataloader, optimizer, scheduler):
         self.train()
         self.init_metric_dict()
         
         for e in range(num_epochs):
             for i, batch in tqdm(enumerate(train_dataloader)):
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
 
                 text1, text2, target = batch
 
                 text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
                 text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
                 
-                text1_inputs = {k: v.to(self.device) for k, v in text1_inputs.items()}
-                text2_inputs = {k: v.to(self.device) for k, v in text1_inputs.items()}
+                text1_inputs = self.inputs_to_device(text1_inputs)
+                text2_inputs = self.inputs_to_device(text2_inputs)
                 target = target.to(self.device)
                 
                 out = self.forward(text1_inputs, text2_inputs)
@@ -131,16 +132,15 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
     
     def log_metrics(self):
         print()
-        
         for k in self.train_metric_dict.keys():
             print(f"Train {k} coefficient - {np.round(self.train_metric_dict[k][-1], decimals=3)}")
             
         for k in self.val_metric_dict.keys():
             print(f"Validation {k} coefficient - {np.round(self.val_metric_dict[k][-1], decimals=3)}")
-        
         print()
         
         
+    @torch.no_grad()
     def _validate_dataloader(self, dataloader):
         preds, targets = [], []
         for i, batch in tqdm(enumerate(dataloader)):
@@ -149,8 +149,8 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
             text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
             
-            text1_inputs = {k: v.to(self.device) for k, v in text1_inputs.items()}
-            text2_inputs = {k: v.to(self.device) for k, v in text1_inputs.items()}
+            text1_inputs = self.inputs_to_device(text1_inputs)
+            text2_inputs = self.inputs_to_device(text2_inputs)
             target = target.to(self.device)
             
             out = self.forward(text1_inputs, text2_inputs)
@@ -163,34 +163,32 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
     def validate_model(self, train_dataloader, validation_dataloader):
         self.eval()
 
-        with torch.no_grad():
-            print("Calculating metrics on train . . .")
-            train_preds, train_targets = self._validate_dataloader(train_dataloader)
+        print("Calculating metrics on train . . .")
+        train_preds, train_targets = self._validate_dataloader(train_dataloader)
 
-            print("Calculating metrics on validation . . .")
-            val_preds, val_targets = self._validate_dataloader(validation_dataloader)
-            
-            train_metrics = self.compute_metrics(train_preds, train_targets)
-            val_metrics = self.compute_metrics(val_preds, val_targets)
-            
-            for k in train_metrics.keys():
-                self.train_metric_dict[k].append(train_metrics[k])
-                self.val_metric_dict[k].append(val_metrics[k])
-            
+        print("Calculating metrics on validation . . .")
+        val_preds, val_targets = self._validate_dataloader(validation_dataloader)
+        
+        train_metrics = self.compute_metrics(train_preds, train_targets)
+        val_metrics = self.compute_metrics(val_preds, val_targets)
+        
+        for k in train_metrics.keys():
+            self.train_metric_dict[k].append(train_metrics[k])
+            self.val_metric_dict[k].append(val_metrics[k])
+        
         self.train()
 
     def test_model(self, test_dataloader):
         self.eval()
         
-        with torch.no_grad():
-            print("Calculating metrics on test . . .")
-            test_preds, test_targets = self._validate_dataloader(test_dataloader)
+        print("Calculating metrics on test . . .")
+        test_preds, test_targets = self._validate_dataloader(test_dataloader)
 
-            test_metrics = self.compute_metrics(test_preds, test_targets)
-            
-            for k in test_metrics.keys():
-                self.test_metric_dict[k].append(test_metrics[k])
-    
+        test_metrics = self.compute_metrics(test_preds, test_targets)
+        
+        for k in test_metrics.keys():
+            self.test_metric_dict[k].append(test_metrics[k])
+
     def postprocess(self, out):
         # used only in cross entropy to add softmax
         return out
@@ -221,10 +219,6 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         print()
 
     @abstractmethod
-    def define_embedding_layer(self):
-        pass
-
-    @abstractmethod
     def combine_features(out1, out2) -> Tuple[torch.Tensor, ...]:
         pass
 
@@ -237,10 +231,10 @@ class CrossEntropyArticleEmbeddingModel(BaseArticleEmbeddingModel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.classifier = nn.Sequential(
-            nn.Linear(self.config.hidden_size * 3, 1)
+        self.cls = nn.Sequential(
+            nn.Linear(self.config.hidden_size * 3, 1), # u, v, |u - v|
         ).to(self.device)
-
+        
     def postprocess(self, out):
         num_labels = out.shape[-1]
         
@@ -249,17 +243,9 @@ class CrossEntropyArticleEmbeddingModel(BaseArticleEmbeddingModel):
         
         return softmax(out)
 
-    def define_embedding_layer(self):
-        self.article_embedding = nn.Sequential(
-            nn.Linear(self.config.hidden_size * 3, self.config.hidden_size * 3),
-            nn.Dropout(self.config.hidden_dropout_prob),
-            nn.Linear(self.config.hidden_size * 3, self.embedding_size) # u, v, |u - v|
-        )
-
     def combine_features(self, out1, out2):
         features = torch.cat((out1, out2, torch.abs(out1 - out2)), dim=1)
-        out = self.classifier(features)
-        return out
+        return self.cls(features)
 
     def loss(self, output, target):
         num_labels = output.shape[-1]
@@ -271,13 +257,6 @@ class CrossEntropyArticleEmbeddingModel(BaseArticleEmbeddingModel):
     
 
 class CosineSimilarityArticleEmbeddingModel(BaseArticleEmbeddingModel):
-
-    def define_embedding_layer(self):
-        self.article_embedding = nn.Sequential(
-            nn.Linear(self.config.hidden_size, self.config.hidden_size),
-            nn.Dropout(self.config.hidden_dropout_prob),
-            nn.Linear(self.config.hidden_size, self.embedding_size)
-        )
 
     def combine_features(self, out1, out2):
         return (out1, out2)

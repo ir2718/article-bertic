@@ -3,7 +3,8 @@ from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_wi
 
 def get_optimizer(optimizer_type, model, **optimizer_kwargs):
     d = {
-        "adamw": torch.optim.AdamW
+        "adamw": torch.optim.AdamW,
+        "adam": torch.optim.Adam
     }
     
     
