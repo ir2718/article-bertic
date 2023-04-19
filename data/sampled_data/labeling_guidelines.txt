@@ -1,0 +1,36 @@
+Duplikati članke koji u sebi sadrže više članaka su preskočeni.
+
+(5) Članci su u potpunosti ekvivalentni i imaju isto značenje. 
+
+   - Bush plans to meet with Israeli Prime Minister Ariel Sharon and the new Palestinian prime 
+     minister, Mahmoud Abbas, in the Jordanian port of Aqaba on Wednesday.
+   - On Wednesday next week, Mr Bush will meet Israeli Prime Minister Ariel Sharon and new Palestinian 
+     leader Mahmoud Abbas in Aqaba, Jordan.
+
+(4) Članci su uglavnom ekvivalentni, ali neki NEBITNI detalji su različiti ili nedostaju.
+
+    - Ricky Clemons’ brief, troubled Missouri basketball career is over.
+    - Missouri kicked Ricky Clemons off its team, ending his troubled career there.
+
+(3) Članci su uglavnom ekvivalentni, ali neki BITNI detalji su različiti ili nedostaju.
+
+    - It was the third time in four years that wildfires forced the park to close.
+    - For the third time in four years wildfires closed Mesa Verde National Park, the country’s only  
+      park dedicated to ancient ruins.
+
+(2) Članci nisu ekvivalentni, ali dijele neke detalje.
+
+    - The company didn’t detail the costs of the replacement and repairs.
+    - But company officials expect the costs of the replacement work to run into the millions of 
+      dollars.
+
+(1) Članci nisu ekvivalentni, ali njihova tematika je (na dijelovima) slična.
+
+    - Syria urges refugees to return.
+    - Syria’s tenuous truce takes hold.
+
+(0) Članci nisu ekvivalentni i njihova tematika je raličita.
+
+    - Moderate tremor in the Central Mediterranean.
+    - Iran: Moderate candidate wins presidential vote.
+

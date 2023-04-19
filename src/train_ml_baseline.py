@@ -11,34 +11,108 @@ from sklearn.model_selection import GridSearchCV, PredefinedSplit
 from tqdm import tqdm
 from scipy.stats import spearmanr, pearsonr
 from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.neighbors import KNeighborsRegressor
+from transformers import set_seed
 from sklearn.svm import SVR
+from scipy.spatial.distance import cosine
 from ast import literal_eval
+from transformers import AutoTokenizer, AutoModel
+    
+def get_features(x):
+    x1 = x[:, :x.shape[1]//2]
+    x2 = x[:, x.shape[1]//2:]
+    abs_diff = np.abs(x1-x2)
+    # mult = x1 * x2
+    features = np.concatenate((x, abs_diff), axis=1)
+    return features 
 
-class KNNModel:
-
-    def __init__(self, **kwargs):
-        self.model = KNeighborsRegressor(**kwargs)
+class BERTicCLS:
+    def __init__(self, bertic_name):
+        
+        self.device = "cuda:0"
+        self.tokenizer = AutoTokenizer.from_pretrained(bertic_name)
+        self.embeddings = AutoModel.from_pretrained(bertic_name).to(self.device)
     
     @staticmethod
     def scale_labels(y):
         return y
-
+    
     def fit(self, x, y):
-        self.model.fit(x, y)
-
+        pass
+    
+    def _batch_to_device(self, d):
+        return {k: v.to(self.device) for k, v in d.items()}
+    
+    def _split_into_chunks(self, d, batch_size):
+        shape = d["input_ids"].shape[0]        
+        return {k: v.split(batch_size) for k, v in d.items()}
+    
     def __call__(self, x):
-        return self.model.predict(x)
+        tokenized_first = self.tokenizer(x[0], padding=True, truncation=True, return_tensors="pt")
+        tokenized_second = self.tokenizer(x[1], padding=True, truncation=True, return_tensors="pt")
 
+        inputs1 = self._batch_to_device(tokenized_first)
+        inputs2 = self._batch_to_device(tokenized_second)
+
+        BATCH_SIZE = 1
+        batches1 = self._split_into_chunks(inputs1, BATCH_SIZE)
+        batches2 = self._split_into_chunks(inputs2, BATCH_SIZE)
+
+        cos_sims = []        
+        for i in tqdm(range(len(batches1["input_ids"]))):
+            emb1 = self.embeddings(
+                input_ids=batches1["input_ids"][i],
+                token_type_ids=batches1["token_type_ids"][i],
+                attention_mask=batches1["attention_mask"][i],
+            ).last_hidden_state
+            emb2 = self.embeddings(
+                input_ids=batches2["input_ids"][i],
+                token_type_ids=batches2["token_type_ids"][i],
+                attention_mask=batches2["attention_mask"][i],
+            ).last_hidden_state
+            
+            emb1_repr = self.get_representation(emb1, batches1["attention_mask"][i]).detach().cpu().numpy()
+            emb2_repr = self.get_representation(emb2, batches2["attention_mask"][i]).detach().cpu().numpy()
+            
+            cos_sim = np.array([1 - cosine(x1i, x2i) for x1i, x2i in zip(emb1_repr, emb2_repr)]) 
+            cos_sims.extend(cos_sim)
+        cos_sims = np.array(cos_sims)
+        return cos_sims
+    
+    def get_representation(self, emb, attention_mask):
+        cls_ = emb[:, 0, :] 
+        return cls_
+    
     @staticmethod
     def hyperparam_dict():
-        return {
-            "n_neighbors": list(range(3, 30)),
-            "weights": ["uniform", "distance"],
-            "metric": ["l1", "l2", "cosine"]
-        }
-    
+        return {}
 
+class BERTicMean(BERTicCLS):
+    def get_representation(self, emb, attention_mask):
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(emb.size()).float()
+        emb_sum = torch.sum(emb * input_mask_expanded, dim=1)
+        sum_mask = input_mask_expanded.sum(dim=1)
+        emb_mean = emb_sum / sum_mask
+        return emb_mean
+
+class AveragedEmbeddings:
+    
+    @staticmethod
+    def scale_labels(y):
+        return y
+    
+    def fit(self, x, y):
+        pass
+    
+    def __call__(self, x):
+        x1 = x[:, :x.shape[1]//2]
+        x2 = x[:, x.shape[1]//2:]
+        cos_sim = np.array([1 - cosine(x1i, x2i) for x1i, x2i in zip(x1, x2)]) # we want similarity
+        return cos_sim
+    
+    @staticmethod
+    def hyperparam_dict():
+        return {}
+    
 class SVMModel:
 
     def __init__(self, **kwargs):
@@ -49,10 +123,10 @@ class SVMModel:
         return y
 
     def fit(self, x, y):
-        self.model.fit(x, y)
+        self.model.fit(get_features(x), y)
 
     def __call__(self, x):
-        return self.model.predict(x)
+        return self.model.predict(get_features(x))
 
     @staticmethod
     def hyperparam_dict():
@@ -78,10 +152,10 @@ class LRModel:
         y_tmp = np.clip(y/5., 1e-8, 1 - 1e-8)
         y_tmp_inv = np.log(y_tmp / (1 - y_tmp))
 
-        self.model.fit(x, y_tmp_inv)
+        self.model.fit(get_features(x), y_tmp_inv)
 
     def __call__(self, x):
-        out_x = self.model.predict(x)
+        out_x = self.model.predict(get_features(x))
 
         # to avoid numerical overflow
         lr_out = np.where(
@@ -113,10 +187,10 @@ class LRL2Model:
         y_tmp = np.clip(y/5., 1e-8, 1 - 1e-8)
         y_tmp_inv = np.log(y_tmp / (1 - y_tmp))
 
-        self.model.fit(x, y_tmp_inv)
+        self.model.fit(get_features(x), y_tmp_inv)
 
     def __call__(self, x):
-        out_x = self.model.predict(x)
+        out_x = self.model.predict(get_features(x))
 
         # to avoid numerical overflow
         lr_out = np.where(
@@ -169,14 +243,25 @@ class ExplosionEmbeddings:
 
         return np.concatenate((text1_embeddings, text2_embeddings), axis=1)
 
+class NoEmbedding:
+    def __call__(self, text):
+        text1 = text["body"].values.tolist()
+        text2 = text["body2"].values.tolist()
+        return [text1, text2]
+
 MODEL_DICT = {
-    "knn": KNNModel,
+    "bertic_cls": lambda: BERTicCLS("classla/bcms-bertic"),
+    "bertic_mean": lambda: BERTicMean("classla/bcms-bertic"),
+    "bertic_ner_cls": lambda: BERTicCLS("classla/bcms-bertic-ner"),
+    "bertic_ner_mean": lambda: BERTicMean("classla/bcms-bertic-ner"),
+    "average": AveragedEmbeddings,
     "svm": SVMModel,
     "lr": LRModel,
     "lrl2": LRL2Model,
 }
 
 EMBEDDING_DICT = {
+    "no_embedding": NoEmbedding(),
     "fasttext": FastTextEmbeddings(),
     "spacy": ExplosionEmbeddings()
 }
@@ -226,8 +311,11 @@ def train_model(model, embeddings, X_train, y_train, X_validation, y_validation,
         model = model()
     else:
         y_train_scaled, y_validation_scaled = model.scale_labels(y_train.values), model.scale_labels(y_validation.values)
+
         hp_dict = find_best_hyperparams(
-            model().model, model.hyperparam_dict(), X_train, y_train_scaled, X_validation, y_validation_scaled
+            model().model, 
+            model.hyperparam_dict(), 
+            X_train, y_train_scaled, X_validation, y_validation_scaled
         )
         model = model(**hp_dict)
         
@@ -278,6 +366,7 @@ if __name__ == "__main__":
     args = parse()
 
     np.random.seed(args.seed)
+    set_seed(args.seed)
 
     if args.model == "all":
         for e in EMBEDDING_DICT.keys():
@@ -291,10 +380,11 @@ if __name__ == "__main__":
             for m in MODEL_DICT.keys():
                 model = MODEL_DICT[m]
 
-                print(f"Training {m} model using {e} embeddings . . .")
-                train_model(
-                    model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt
-                )
+                if model.hyperparam_dict() != {}:
+                    print(f"Training {m} model using {e} embeddings . . .")
+                    train_model(
+                        model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt
+                    )
   
     else:
         model, embeddings = MODEL_DICT[args.model], EMBEDDING_DICT[args.embeddings]

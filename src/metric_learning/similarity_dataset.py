@@ -18,7 +18,7 @@ class BaseSimilarityDataset(ABC, Dataset):
     
     LABEL_COL = "choice"
     FIRST_ARTICLE_COL = "body"
-    SECOND_ARTICLE_COL = "body"
+    SECOND_ARTICLE_COL = "body2"
 
     def __init__(self, root, split):
         super().__init__()

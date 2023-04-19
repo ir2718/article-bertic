@@ -22,7 +22,6 @@ model = get_model(
     model_name=args.model_name,
     embedding_size=args.embedding_size,
     device=args.device,
-    val_steps=args.val_steps,
     pooling_type=args.pooling_type,
 )
 
@@ -36,7 +35,7 @@ optimizer = get_optimizer(
 scheduler = get_scheduler(
     scheduler_type=args.scheduler,
     optimizer=optimizer,
-    num_training_steps=len(train_dataset),
+    num_training_steps=(len(train_dataloader) // args.gradient_accumulation_steps),
     warmup_ratio=args.warmup_ratio
 )
 
@@ -48,7 +47,8 @@ model.train_model(
     train_dataloader=train_dataloader, 
     validation_dataloader=val_dataloader,
     optimizer=optimizer, 
-    scheduler=scheduler
+    scheduler=scheduler,
+    gradient_accumulation_steps=args.gradient_accumulation_steps
 )
 
 model.test_model(

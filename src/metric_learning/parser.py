@@ -5,7 +5,7 @@ def parse():
     parser.add_argument("--model_name", type=str, default="classla/bcms-bertic")
     parser.add_argument("--embedding_size", type=int, default=768)
     parser.add_argument("--pooling_type", type=str, default="mean")
-    parser.add_argument("--loss_function", type=str, default="cross_entropy")
+    parser.add_argument("--loss_function", type=str, default="cross_entropy") # cosine_similarity
     
     parser.add_argument("--optimizer", type=str, default="adamw")
     parser.add_argument("--scheduler", type=str, default="linear")
@@ -18,11 +18,11 @@ def parse():
     parser.add_argument("--num_epochs", type=int, default=10)
     parser.add_argument("--train_batch_size", type=int, default=32)
     parser.add_argument("--val_batch_size", type=int, default=64)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
     
     parser.add_argument("--seed", type=int, default=42)
     
-    parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--val_steps", type=int, default=1000)
+    parser.add_argument("--device", type=str, default="cuda:0")
 
     args = parser.parse_args()
     return args

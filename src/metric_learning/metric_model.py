@@ -40,7 +40,7 @@ class MeanPooling(nn.Module):
     def forward(self, last_hidden, attention_mask):
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
         emb_sum = torch.sum(last_hidden * input_mask_expanded, dim=1)
-        sum_mask = input_mask_expanded.sum(dim=1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9) # denominator
         emb_mean = emb_sum / sum_mask
         return emb_mean
     
@@ -48,7 +48,7 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
 
     MAX_GRAD_NORM = 1.0
 
-    def __init__(self, loss_name, model_name, pooling_type, embedding_size, device, val_steps):
+    def __init__(self, loss_name, model_name, pooling_type, embedding_size, device):
         super().__init__()
         self.embedding_size = embedding_size
         self.model_name = model_name
@@ -60,12 +60,11 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
 
         self.pooling_layer = get_pooling_layer(pooling_type)
         
-        self.val_steps = val_steps
         self.device = device
         self.to(device)
 
     def forward_once(self, inputs):
-        out = self.model(**inputs)[0]
+        out = self.model(**inputs).last_hidden_state
         out = self.pooling_layer(out, inputs["attention_mask"])
         return out 
 
@@ -97,14 +96,13 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
     def inputs_to_device(self, batch):
         return {k:v.to(self.device) for k, v in batch.items()}
         
-    def train_model(self, num_epochs, train_dataloader, validation_dataloader, optimizer, scheduler):
+    def train_model(self, num_epochs, train_dataloader, validation_dataloader, optimizer, scheduler, gradient_accumulation_steps):
         self.train()
         self.init_metric_dict()
         
+        step = 0
         for e in range(num_epochs):
             for i, batch in tqdm(enumerate(train_dataloader)):
-                optimizer.zero_grad(set_to_none=True)
-
                 text1, text2, target = batch
 
                 text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
@@ -112,17 +110,19 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
                 
                 text1_inputs = self.inputs_to_device(text1_inputs)
                 text2_inputs = self.inputs_to_device(text2_inputs)
-                target = target.to(self.device)
+                target = target.to(self.device).float()
                 
                 out = self.forward(text1_inputs, text2_inputs)
-                
-                nn.utils.clip_grad_norm_(self.parameters(), BaseArticleEmbeddingModel.MAX_GRAD_NORM)
                 
                 loss = self.loss(out, target)
                 loss.backward()
 
-                optimizer.step()
-                scheduler.step()
+                step += 1
+                if step % gradient_accumulation_steps == 0:
+                    nn.utils.clip_grad_norm_(self.parameters(), BaseArticleEmbeddingModel.MAX_GRAD_NORM)
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
                 
             self.validate_model(train_dataloader, validation_dataloader)
             self.log_metrics()
@@ -259,10 +259,10 @@ class CrossEntropyArticleEmbeddingModel(BaseArticleEmbeddingModel):
 class CosineSimilarityArticleEmbeddingModel(BaseArticleEmbeddingModel):
 
     def combine_features(self, out1, out2):
-        return (out1, out2)
+        return cosine_similarity(out1, out2)
 
     def loss(self, output, target):
-        return mse_loss(cosine_similarity(*output), target)
+        return mse_loss(output, target)
 
 
 if __name__ == "__main__":
