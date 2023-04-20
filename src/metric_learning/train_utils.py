@@ -1,25 +1,41 @@
 import torch
 from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
 
-def get_optimizer(optimizer_type, model, **optimizer_kwargs):
+def get_parameter_names(model, forbidden_layer_types):
+    """
+    Returns the names of the model parameters that are not inside a forbidden layer.
+    """
+    result = []
+    for name, child in model.named_children():
+        result += [
+            f"{name}.{n}"
+            for n in get_parameter_names(child, forbidden_layer_types)
+            if not isinstance(child, tuple(forbidden_layer_types))
+        ]
+    # Add model specific parameters (defined with nn.Parameter) since they are not in any child.
+    result += list(model._parameters.keys())
+    return result
+
+def get_optimizer(optimizer_type, model, lr, **optimizer_kwargs):
     d = {
         "adamw": torch.optim.AdamW,
         "adam": torch.optim.Adam
     }
     
-    
-    if "weight_decay" in optimizer_kwargs:
-        param_optimizer = list(model.named_parameters())
+    decay_parameters = get_parameter_names(model, [torch.nn.LayerNorm])
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+            "weight_decay": optimizer_kwargs["weight_decay"] if "weight_decay" in optimizer_kwargs else 0.0,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if n not in decay_parameters],
+            "weight_decay": 0.0,
+        },
+    ]
 
-        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        optimizer_parameters = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': optimizer_kwargs["weight_decay"]},
-            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-    else:
-        optimizer_parameters = list(model.named_parameters())
-
-    optimizer = d[optimizer_type](optimizer_parameters, **optimizer_kwargs)
+    optimizer = d[optimizer_type](optimizer_grouped_parameters, lr=lr)
     
     return optimizer
 

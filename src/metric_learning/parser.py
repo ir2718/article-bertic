@@ -9,7 +9,7 @@ def parse():
     
     parser.add_argument("--optimizer", type=str, default="adamw")
     parser.add_argument("--scheduler", type=str, default="linear")
-    parser.add_argument("--warmup_ratio", type=str, default=0.1)
+    parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-2)
 

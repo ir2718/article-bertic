@@ -9,7 +9,7 @@ args = parse()
 set_seed(args.seed)
 
 train_dataset = get_dataset(loss=args.loss_function, root=args.dataset_root, split="train")
-train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size)
 
 val_dataset = get_dataset(loss=args.loss_function, root=args.dataset_root, split="validation")
 val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size)
@@ -35,14 +35,14 @@ optimizer = get_optimizer(
 scheduler = get_scheduler(
     scheduler_type=args.scheduler,
     optimizer=optimizer,
-    num_training_steps=(len(train_dataloader) // args.gradient_accumulation_steps),
+    num_training_steps=(len(train_dataloader) // args.gradient_accumulation_steps) + 1,
     warmup_ratio=args.warmup_ratio
 )
 
 print()
 print("Starting training . . .")
 
-model.train_model(
+model.train_metric_model(
     num_epochs=args.num_epochs,
     train_dataloader=train_dataloader, 
     validation_dataloader=val_dataloader,
