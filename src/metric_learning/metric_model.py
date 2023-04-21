@@ -19,9 +19,6 @@ import torch
 import json
 import os
 
-def load_model(path):
-    return torch.load(path)
-
 def get_model(loss, **model_kwargs):
     d = {
         Loss.CROSS_ENTROPY_LOSS: CrossEntropyArticleEmbeddingModel,
@@ -52,6 +49,7 @@ class MeanPooling(nn.Module):
 class BaseArticleEmbeddingModel(ABC, nn.Module):
 
     MAX_GRAD_NORM = 1.0
+    METRIC = "spearman"
 
     def __init__(self, loss_name, model_name, pooling_type, embedding_size, device):
         super().__init__()
@@ -98,8 +96,6 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         out_emb = self.embedding_layer(out_mean)
         out_emb_norm = normalize(out_emb, p=2.0, dim=1)
         return out_emb_norm
-        #out_cls = out[:, 0, :]
-        #return torch.cat((out_cls * out_mean, torch.abs(out_cls - out_mean)), dim=1)
 
     def forward(self, input1, input2):
         # get two texts features
@@ -159,9 +155,13 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
 
             self.validate_model(train_dataloader, validation_dataloader)
             self.log_metrics()
-            self.save_model(e)
+            
+            if self.val_metric_dict[BaseArticleEmbeddingModel.METRIC][-1] == max(self.val_metric_dict[BaseArticleEmbeddingModel.METRIC]):
+                self.save_model(e)
         
-        self.eval()
+        self.load_best_model()
+        return self
+    
     
     def log_metrics(self):
         print()
@@ -224,11 +224,17 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         # used only in cross entropy to add softmax
         return out
 
+    def load_best_model(self):
+        save_path = f"./models/article_bertic/{self.model_name}/{self.loss_name}"
+        model_save_path = [i for i in os.listdir(save_path) if i.endswith(".pt")][0]
+        print(f"Found best model at path: {model_save_path}")
+        self.load_state_dict(torch.load(os.path.join(save_path, model_save_path)))
+
     def save_model(self, epoch):
         save_path = f"./models/article_bertic/{self.model_name}/{self.loss_name}"
-        model_save_path = f"{save_path}/epoch_{epoch}.pt"
+        model_save_path = f"{save_path}/best_model.pt"
         os.makedirs(save_path, exist_ok=True)
-        torch.save(self.model, model_save_path)
+        torch.save(self.state_dict(), model_save_path)
         print()
         print(f"Saved the model to {model_save_path}")
         print()

@@ -40,14 +40,14 @@ model.set_scheduler(
     warmup_ratio=args.warmup_ratio
 )
 
-model.train_metric_model(
+best_model = model.train_metric_model(
     num_epochs=args.num_epochs,
     train_dataloader=train_dataloader, 
     validation_dataloader=val_dataloader,
     gradient_accumulation_steps=args.gradient_accumulation_steps
 )
 
-model.test_model(
+best_model.test_model(
     test_dataloader=test_dataloader
 )
-model.save_all_metrics()
+best_model.save_all_metrics()
