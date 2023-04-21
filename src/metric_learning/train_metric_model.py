@@ -25,29 +25,25 @@ model = get_model(
     pooling_type=args.pooling_type,
 )
 
-optimizer = get_optimizer(
+print()
+print("Starting training . . .")
+
+model.set_optimizer(
     optimizer_type=args.optimizer,
-    model=model,
     lr=args.lr,
     weight_decay=args.weight_decay
 )
 
-scheduler = get_scheduler(
+model.set_scheduler(
     scheduler_type=args.scheduler,
-    optimizer=optimizer,
-    num_training_steps=(len(train_dataloader) // args.gradient_accumulation_steps) + 1,
+    num_training_steps=args.num_epochs * (len(train_dataloader) // args.gradient_accumulation_steps + 1),
     warmup_ratio=args.warmup_ratio
 )
-
-print()
-print("Starting training . . .")
 
 model.train_metric_model(
     num_epochs=args.num_epochs,
     train_dataloader=train_dataloader, 
     validation_dataloader=val_dataloader,
-    optimizer=optimizer, 
-    scheduler=scheduler,
     gradient_accumulation_steps=args.gradient_accumulation_steps
 )
 

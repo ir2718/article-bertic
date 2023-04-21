@@ -3,7 +3,8 @@ from torch.nn.functional import (
     cosine_similarity, 
     mse_loss,
     binary_cross_entropy_with_logits,
-    softmax
+    softmax,
+    normalize
 )
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 from src.metric_learning.enums import Loss, Pooling
@@ -11,12 +12,15 @@ from scipy.stats import pearsonr, spearmanr
 from abc import ABC, abstractmethod
 from typing import Tuple
 from tqdm import tqdm
-from src.metric_learning.train_utils import get_optimizer
+from src.metric_learning.train_utils import get_optimizer, get_scheduler
 import torch.nn as nn
 import numpy as np
 import torch
 import json
 import os
+
+def load_model(path):
+    return torch.load(path)
 
 def get_model(loss, **model_kwargs):
     d = {
@@ -58,16 +62,44 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         self.config = AutoConfig.from_pretrained(model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, config=self.config, use_fast=False)
         self.model = AutoModel.from_pretrained(model_name, config=self.config)
+        if self.embedding_size is None:
+            self.embedding_layer = nn.Identity()
+        else:
+            self.embedding_layer = nn.Sequential(
+                nn.Linear(in_features=self.config.hidden_size, out_features=self.config.hidden_size),
+                nn.GELU(),
+                nn.Linear(in_features=self.config.hidden_size, out_features=self.embedding_size),
+            )
 
         self.pooling_layer = get_pooling_layer(pooling_type)
         
         self.device = device
         self.to(device)
 
+    def set_optimizer(self, optimizer_type, lr, weight_decay):
+        self.optimizer = get_optimizer(
+            model=self,
+            optimizer_type=optimizer_type, 
+            lr=lr, 
+            weight_decay=weight_decay
+        )
+
+    def set_scheduler(self, scheduler_type, num_training_steps, warmup_ratio):
+        self.scheduler = get_scheduler(
+            scheduler_type=scheduler_type, 
+            optimizer=self.optimizer,
+            num_training_steps=num_training_steps, 
+            warmup_ratio=warmup_ratio
+        )
+
     def forward_once(self, inputs):
         out = self.model(**inputs).last_hidden_state
-        out = self.pooling_layer(out, inputs["attention_mask"])
-        return out 
+        out_mean = self.pooling_layer(out, inputs["attention_mask"])
+        out_emb = self.embedding_layer(out_mean)
+        out_emb_norm = normalize(out_emb, p=2.0, dim=1)
+        return out_emb_norm
+        #out_cls = out[:, 0, :]
+        #return torch.cat((out_cls * out_mean, torch.abs(out_cls - out_mean)), dim=1)
 
     def forward(self, input1, input2):
         # get two texts features
@@ -80,7 +112,7 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         # return unnormalized output
         return out
     
-    def init_metric_dict(self):
+    def init_metric_dicts(self):
         self.test_metric_dict = {"spearman": [], "pearson": []}
         self.val_metric_dict = {"spearman": [], "pearson": []}
         self.train_metric_dict = {"spearman": [], "pearson": []}
@@ -97,9 +129,10 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
     def inputs_to_device(self, batch):
         return {k:v.to(self.device) for k, v in batch.items()}
         
-    def train_metric_model(self, num_epochs, train_dataloader, validation_dataloader, optimizer, scheduler, gradient_accumulation_steps):
-        self.init_metric_dict()
-        
+    def train_metric_model(self, num_epochs, train_dataloader, validation_dataloader, gradient_accumulation_steps):
+        self.train()
+        self.init_metric_dicts()
+
         step = 0
         for e in range(num_epochs):
             for i, batch in tqdm(enumerate(train_dataloader)):
@@ -120,8 +153,8 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
                 step += 1
                 if step % gradient_accumulation_steps == 0:
                     nn.utils.clip_grad_norm_(self.parameters(), BaseArticleEmbeddingModel.MAX_GRAD_NORM)
-                    optimizer.step()
-                    scheduler.step()
+                    self.optimizer.step()
+                    self.scheduler.step()
                     self.zero_grad()
 
             self.validate_model(train_dataloader, validation_dataloader)
@@ -139,24 +172,24 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             print(f"Validation {k} coefficient - {np.round(self.val_metric_dict[k][-1], decimals=3)}")
         print()
         
-        
+    
+    @torch.no_grad()
     def validate_dataloader(self, dataloader):
         preds, targets = [], []
         for i, batch in tqdm(enumerate(dataloader)):
-            with torch.no_grad():
-                text1, text2, target = batch
+            text1, text2, target = batch
 
-                text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
-                text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
-                
-                text1_inputs = self.inputs_to_device(text1_inputs)
-                text2_inputs = self.inputs_to_device(text2_inputs)
-                target = target.to(self.device)
-                
-                out = self.forward(text1_inputs, text2_inputs)
-                
-                preds.extend(out)
-                targets.extend(target)
+            text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
+            text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
+            
+            text1_inputs = self.inputs_to_device(text1_inputs)
+            text2_inputs = self.inputs_to_device(text2_inputs)
+            target = target.to(self.device)
+            
+            out = self.forward(text1_inputs, text2_inputs)
+            
+            preds.extend(out)
+            targets.extend(target)
             
         return torch.stack(preds), torch.stack(targets)
         
@@ -181,8 +214,7 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
         self.eval()
         
         print("Calculating metrics on test . . .")
-        test_preds, test_targets = self._validate_dataloader(test_dataloader)
-
+        test_preds, test_targets = self.validate_dataloader(test_dataloader)
         test_metrics = self.compute_metrics(test_preds, test_targets)
         
         for k in test_metrics.keys():
@@ -256,6 +288,9 @@ class CrossEntropyArticleEmbeddingModel(BaseArticleEmbeddingModel):
     
 
 class CosineSimilarityArticleEmbeddingModel(BaseArticleEmbeddingModel):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def combine_features(self, out1, out2):
         return cosine_similarity(out1, out2)

@@ -3,7 +3,7 @@ import argparse
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="classla/bcms-bertic")
-    parser.add_argument("--embedding_size", type=int, default=768)
+    parser.add_argument("--embedding_size", default=None)
     parser.add_argument("--pooling_type", type=str, default="mean")
     parser.add_argument("--loss_function", type=str, default="cross_entropy") # cosine_similarity
     
@@ -24,5 +24,14 @@ def parse():
     
     parser.add_argument("--device", type=str, default="cuda:0")
 
+    args = parser.parse_args()
+    return args
+
+def parse_visualization():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--dataset_root", type=str, default="./data/similarity_dataset")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
     return args
