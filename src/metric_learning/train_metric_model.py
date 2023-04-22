@@ -1,10 +1,8 @@
 from src.metric_learning.parser import parse
 from src.metric_learning.similarity_dataset import get_dataset
 from src.metric_learning.metric_model import get_model
-from src.metric_learning.train_utils import get_optimizer, get_scheduler
 from torch.utils.data import DataLoader
 from transformers import set_seed
-import torch
 
 args = parse()
 set_seed(args.seed)

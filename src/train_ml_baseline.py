@@ -16,6 +16,7 @@ from sklearn.svm import SVR
 from scipy.spatial.distance import cosine
 from ast import literal_eval
 from transformers import AutoTokenizer, AutoModel
+import pickle
     
 def get_features(x):
     x1 = x[:, :x.shape[1]//2]
@@ -271,8 +272,9 @@ def parse():
     parser.add_argument("--model", type=str, choices=list(MODEL_DICT.keys()) + ["all"], required=True)
     parser.add_argument("--embeddings", type=str, choices=list(EMBEDDING_DICT.keys()))
     parser.add_argument("--save_path", type=str, default="./models")
-    parser.add_argument("--hyperopt", type=literal_eval, default=False)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--hyperopt", action="store_true")
+    parser.add_argument("--save", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -306,7 +308,7 @@ def save_json(path, d):
         json.dump(d, f)
     f.close()
 
-def train_model(model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, model_name, embedding_name, hyperopt):
+def train_model(model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, model_name, embedding_name, hyperopt, save):
     if not hyperopt:
         model = model()
     else:
@@ -342,6 +344,12 @@ def train_model(model, embeddings, X_train, y_train, X_validation, y_validation,
 
     print(f"Saved results to {path_metrics}")
     print()
+
+    if save:
+        model_path = os.path.join(path_metrics, "model.pkl")
+        pickle.dump(model, open(model_path, 'wb'))
+        print(f"Saved results to {model_path}")
+        print()
 
 def find_best_hyperparams(model, parameters, X_train, y_train, X_validation, y_validation):
     X_whole = np.concatenate((X_train, X_validation), axis=0)
@@ -383,7 +391,7 @@ if __name__ == "__main__":
                 if model.hyperparam_dict() != {}:
                     print(f"Training {m} model using {e} embeddings . . .")
                     train_model(
-                        model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt
+                        model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt, args.save
                     )
   
     else:
@@ -396,6 +404,6 @@ if __name__ == "__main__":
 
         print(f"Training {args.model} model using {args.embeddings} embeddings . . .")
         train_model(
-            model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, args.model, args.embeddings, args.hyperopt
+            model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, args.model, args.embeddings, args.hyperopt, args.save
         )
 

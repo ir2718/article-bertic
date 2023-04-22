@@ -27,11 +27,3 @@ def parse():
     args = parser.parse_args()
     return args
 
-def parse_visualization():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True)
-    parser.add_argument("--dataset_root", type=str, default="./data/similarity_dataset")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", type=str, default="cuda:0")
-    args = parser.parse_args()
-    return args

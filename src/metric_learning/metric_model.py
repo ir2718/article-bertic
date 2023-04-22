@@ -92,6 +92,13 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             warmup_ratio=warmup_ratio
         )
 
+    @torch.no_grad()
+    def encode(self, example):
+        tokenized_example = self.tokenizer(example, padding=True, truncation=True, return_tensors="pt")
+        tokenized_inputs = self.inputs_to_device(tokenized_example)
+        out = self.forward_once(tokenized_inputs)
+        return out
+
     def forward_once(self, inputs):
         out = self.model(**inputs).last_hidden_state
         out_mean = self.pooling_layer(out, inputs["attention_mask"])
@@ -136,8 +143,12 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             for i, batch in tqdm(enumerate(train_dataloader)):
                 text1, text2, target = batch
 
-                text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
-                text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
+                text1_inputs = self.tokenizer(
+                    text1, padding=True, truncation=True, return_tensors="pt"
+                )
+                text2_inputs = self.tokenizer(
+                    text2, padding=True, truncation=True, return_tensors="pt"
+                )
                 
                 text1_inputs = self.inputs_to_device(text1_inputs)
                 text2_inputs = self.inputs_to_device(text2_inputs)
