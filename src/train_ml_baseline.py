@@ -16,6 +16,7 @@ from sklearn.svm import SVR
 from scipy.spatial.distance import cosine
 from ast import literal_eval
 from transformers import AutoTokenizer, AutoModel
+import pickle
     
 def get_features(x):
     x1 = x[:, :x.shape[1]//2]
@@ -25,12 +26,12 @@ def get_features(x):
     features = np.concatenate((x, abs_diff), axis=1)
     return features 
 
-class BERTicCLS:
-    def __init__(self, bertic_name):
+class TransformerCLS:
+    def __init__(self, transformer_name):
         
-        self.device = "cuda:0"
-        self.tokenizer = AutoTokenizer.from_pretrained(bertic_name)
-        self.embeddings = AutoModel.from_pretrained(bertic_name).to(self.device)
+        self.device = "cuda:1"
+        self.tokenizer = AutoTokenizer.from_pretrained(transformer_name)
+        self.embeddings = AutoModel.from_pretrained(transformer_name).to(self.device)
     
     @staticmethod
     def scale_labels(y):
@@ -59,16 +60,24 @@ class BERTicCLS:
 
         cos_sims = []        
         for i in tqdm(range(len(batches1["input_ids"]))):
-            emb1 = self.embeddings(
-                input_ids=batches1["input_ids"][i],
-                token_type_ids=batches1["token_type_ids"][i],
-                attention_mask=batches1["attention_mask"][i],
-            ).last_hidden_state
-            emb2 = self.embeddings(
-                input_ids=batches2["input_ids"][i],
-                token_type_ids=batches2["token_type_ids"][i],
-                attention_mask=batches2["attention_mask"][i],
-            ).last_hidden_state
+            
+
+            input_dict1 = {
+                    "input_ids": batches1["input_ids"][i],
+                    "attention_mask": batches1["attention_mask"][i]
+            }
+
+            input_dict2 = {
+                "input_ids": batches2["input_ids"][i],
+                "attention_mask": batches2["attention_mask"][i]
+            }
+            
+            if "token_type_ids" in batches1.keys() and "token_type_ids" in batches2.keys():
+                    input_dict1["token_type_ids"] = batches1["token_type_ids"][i]
+                    input_dict2["token_type_ids"] = batches2["token_type_ids"][i]
+                
+            emb1 = self.embeddings(**input_dict1).last_hidden_state
+            emb2 = self.embeddings(**input_dict2).last_hidden_state
             
             emb1_repr = self.get_representation(emb1, batches1["attention_mask"][i]).detach().cpu().numpy()
             emb2_repr = self.get_representation(emb2, batches2["attention_mask"][i]).detach().cpu().numpy()
@@ -86,7 +95,7 @@ class BERTicCLS:
     def hyperparam_dict():
         return {}
 
-class BERTicMean(BERTicCLS):
+class TransformerMean(TransformerCLS):
     def get_representation(self, emb, attention_mask):
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(emb.size()).float()
         emb_sum = torch.sum(emb * input_mask_expanded, dim=1)
@@ -250,10 +259,16 @@ class NoEmbedding:
         return [text1, text2]
 
 MODEL_DICT = {
-    "bertic_cls": lambda: BERTicCLS("classla/bcms-bertic"),
-    "bertic_mean": lambda: BERTicMean("classla/bcms-bertic"),
-    "bertic_ner_cls": lambda: BERTicCLS("classla/bcms-bertic-ner"),
-    "bertic_ner_mean": lambda: BERTicMean("classla/bcms-bertic-ner"),
+    "bertic_cls": lambda: TransformerCLS("classla/bcms-bertic"),
+    "bertic_mean": lambda: TransformerMean("classla/bcms-bertic"),
+    "bertic_ner_cls": lambda: TransformerCLS("classla/bcms-bertic-ner"),
+    "bertic_ner_mean": lambda: TransformerMean("classla/bcms-bertic-ner"),
+    "crosloengual_cls": lambda: TransformerCLS("EMBEDDIA/crosloengual-bert"),
+    "crosloengual_mean": lambda: TransformerMean("EMBEDDIA/crosloengual-bert"),
+    "mbert_cls": lambda: TransformerCLS("bert-base-multilingual-cased"),
+    "mbert_mean": lambda: TransformerMean("bert-base-multilingual-cased"),
+    "xlm_roberta_cls": lambda: TransformerCLS("xlm-roberta-base"),
+    "xlm_roberta_mean": lambda: TransformerMean("xlm-roberta-base"),
     "average": AveragedEmbeddings,
     "svm": SVMModel,
     "lr": LRModel,
@@ -271,8 +286,9 @@ def parse():
     parser.add_argument("--model", type=str, choices=list(MODEL_DICT.keys()) + ["all"], required=True)
     parser.add_argument("--embeddings", type=str, choices=list(EMBEDDING_DICT.keys()))
     parser.add_argument("--save_path", type=str, default="./models")
-    parser.add_argument("--hyperopt", type=literal_eval, default=False)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--hyperopt", action="store_true")
+    parser.add_argument("--save", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -306,7 +322,7 @@ def save_json(path, d):
         json.dump(d, f)
     f.close()
 
-def train_model(model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, model_name, embedding_name, hyperopt):
+def train_model(model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, model_name, embedding_name, hyperopt, save):
     if not hyperopt:
         model = model()
     else:
@@ -342,6 +358,12 @@ def train_model(model, embeddings, X_train, y_train, X_validation, y_validation,
 
     print(f"Saved results to {path_metrics}")
     print()
+
+    if save:
+        model_path = os.path.join(path_metrics, "model.pkl")
+        pickle.dump(model, open(model_path, 'wb'))
+        print(f"Saved results to {model_path}")
+        print()
 
 def find_best_hyperparams(model, parameters, X_train, y_train, X_validation, y_validation):
     X_whole = np.concatenate((X_train, X_validation), axis=0)
@@ -383,7 +405,7 @@ if __name__ == "__main__":
                 if model.hyperparam_dict() != {}:
                     print(f"Training {m} model using {e} embeddings . . .")
                     train_model(
-                        model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt
+                        model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, m, e, args.hyperopt, args.save
                     )
   
     else:
@@ -396,6 +418,6 @@ if __name__ == "__main__":
 
         print(f"Training {args.model} model using {args.embeddings} embeddings . . .")
         train_model(
-            model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, args.model, args.embeddings, args.hyperopt
+            model, embeddings, X_train, y_train, X_validation, y_validation, X_test, y_test, args.model, args.embeddings, args.hyperopt, args.save
         )
 

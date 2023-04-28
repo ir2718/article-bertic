@@ -51,7 +51,7 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
     MAX_GRAD_NORM = 1.0
     METRIC = "spearman"
 
-    def __init__(self, loss_name, model_name, pooling_type, embedding_size, device):
+    def __init__(self, loss_name, model_name, pooling_type, embedding_size, device, distributed):
         super().__init__()
         self.embedding_size = embedding_size
         self.model_name = model_name
@@ -59,7 +59,7 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
 
         self.config = AutoConfig.from_pretrained(model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, config=self.config, use_fast=False)
-        self.model = AutoModel.from_pretrained(model_name, config=self.config)
+        self.model = AutoModel.from_pretrained(model_name, config=self.config).to(device)
         if self.embedding_size is None:
             self.embedding_layer = nn.Identity()
         else:
@@ -67,12 +67,14 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
                 nn.Linear(in_features=self.config.hidden_size, out_features=self.config.hidden_size),
                 nn.GELU(),
                 nn.Linear(in_features=self.config.hidden_size, out_features=self.embedding_size),
-            )
+            ).to(device)
 
         self.pooling_layer = get_pooling_layer(pooling_type)
-        
         self.device = device
-        self.to(device)
+
+        if distributed:
+            self.model = torch.nn.DataParallel(self.model)
+            self.embedding_layer = torch.nn.DataParallel(self.embedding_layer)
 
     def set_optimizer(self, optimizer_type, lr, weight_decay):
         self.optimizer = get_optimizer(
@@ -89,6 +91,13 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             num_training_steps=num_training_steps, 
             warmup_ratio=warmup_ratio
         )
+
+    @torch.no_grad()
+    def encode(self, example):
+        tokenized_example = self.tokenizer(example, padding=True, truncation=True, return_tensors="pt")
+        tokenized_inputs = self.inputs_to_device(tokenized_example)
+        out = self.forward_once(tokenized_inputs)
+        return out
 
     def forward_once(self, inputs):
         out = self.model(**inputs).last_hidden_state
@@ -134,8 +143,12 @@ class BaseArticleEmbeddingModel(ABC, nn.Module):
             for i, batch in tqdm(enumerate(train_dataloader)):
                 text1, text2, target = batch
 
-                text1_inputs = self.tokenizer(text1, padding=True, truncation=True, return_tensors="pt")
-                text2_inputs = self.tokenizer(text2, padding=True, truncation=True, return_tensors="pt")
+                text1_inputs = self.tokenizer(
+                    text1, padding=True, truncation=True, return_tensors="pt"
+                )
+                text2_inputs = self.tokenizer(
+                    text2, padding=True, truncation=True, return_tensors="pt"
+                )
                 
                 text1_inputs = self.inputs_to_device(text1_inputs)
                 text2_inputs = self.inputs_to_device(text2_inputs)
