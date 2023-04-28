@@ -5,15 +5,19 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from transformers import set_seed
 from tqdm import tqdm
+from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import os
 import numpy as np
 import torch
+import argparse
 
 def parse_visualization():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="classla/bcms-bertic")
     parser.add_argument("--loss_function", type=str, default="cosine_similarity")
+    parser.add_argument("--perplexity", type=float, default=30.0)
+    parser.add_argument("--n_iter", type=int, default=1000)
     parser.add_argument("--embedding_size", default=None)
     parser.add_argument("--num_clusters", type=int, default=8)
     parser.add_argument("--pooling_type", type=str, default="mean")
@@ -62,24 +66,24 @@ with torch.no_grad():
     
 embeddings = np.array(embeddings)
 
+
+emb_clusters = KMeans(n_clusters=args.num_clusters, init="k-means++").fit(embeddings).labels_
+tsne_embeddings = TSNE(perplexity=args.perplexity, n_iter=args.n_iter, metric="cosine").fit_transform(embeddings)
+
 if args.num_clusters < 0:
     inertia = []
     for i in range(1, 40):
         kmeans = KMeans(n_clusters=i, init="k-means++")
-        x_cluster = kmeans.fit_transform(embeddings)
+        x_cluster = kmeans.fit_transform(tsne_embeddings)
         inertia.append(kmeans.inertia_)
     plt.plot(range(1, len(inertia) + 1), inertia)
     plt.show()
     exit(0)
 
-emb_clusters = KMeans(n_clusters=args.num_clusters, init="k-means++").fit(embeddings).labels_
-
-pca = PCA(n_components=2)
-embeddings_pca = pca.fit_transform(embeddings)
 
 plt.figure(figsize=(6, 6))
 plt.axis("equal")
-plt.scatter(embeddings_pca[:, 0], embeddings_pca[:, 1], c=emb_clusters)
+plt.scatter(tsne_embeddings[:, 0], tsne_embeddings[:, 1],c=emb_clusters)
 plt.savefig(
     os.path.join("./figures", f"{args.model_name.replace('/', '-')}_{args.loss_function}.png")
 )
