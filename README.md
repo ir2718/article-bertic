@@ -85,6 +85,6 @@ In addition, the repository contains the first dataset for semantic textual simi
  
 | Model                                         | Training set    | Validation set      | Test set            |
 | --------------------------------------------- | --------------- | ------------------- | ------------------- |
-| Višejezični bi-enkoder BERT | **0.00009** ± **0.00002** | **0.00177** ± 0.00242 | **0.00963** ± **0.00202** |
-| Unakrsni koder BERTić NER CE | 0.18913 ± 0.00231 | 1.91337 ± 0.00471 | 19.31912 ± 0.13923 |
-| Stroj potpornih vektora + Floret | 0.00115 ± 0.00038 | 0.01103 ± **0.00050** | 0.10788 ± 0.00056 |
+| Multilingual bi-encoder BERT | **0.00009** ± **0.00002** | **0.00177** ± 0.00242 | **0.00963** ± **0.00202** |
+| Cross encoder BERTić NER CE | 0.18913 ± 0.00231 | 1.91337 ± 0.00471 | 19.31912 ± 0.13923 |
+| SVM + Floret | 0.00115 ± 0.00038 | 0.01103 ± **0.00050** | 0.10788 ± 0.00056 |
