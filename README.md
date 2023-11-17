@@ -77,13 +77,3 @@ In addition, the repository contains the first dataset for semantic textual simi
 
 ![](./figures/bi_encoders.png)
 
-### Time performance analysis
-
--  due to the representations being independent up until the cosine similarity. bi-encoders should have shorter inference times
--  mean and standard deviation in seconds for BERTić NER cross-encoder and bi-encoder multilingual BERT for 10, 100, and 1000 examples using 10 runs
-
- 
-| Model                                         | Training set    | Validation set      | Test set            |
-| --------------------------------------------- | --------------- | ------------------- | ------------------- |
-| Bi-encoder    | 0.00009 ± 0.00002 | 0.00177 ± 0.00242 | 0.00963 ± 0.00202 |
-| Cross-encoder | 0.18913 ± 0.00231 | 1.91337 ± 0.00471 | 19.31912 ± 0.13923 |
