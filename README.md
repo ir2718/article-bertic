@@ -85,5 +85,5 @@ In addition, the repository contains the first dataset for semantic textual simi
  
 | Model                                         | Training set    | Validation set      | Test set            |
 | --------------------------------------------- | --------------- | ------------------- | ------------------- |
-| Bi-encoder    | 0.00009** ± 0.00002 | 0.00177 ± 0.00242 | 0.00963 ± 0.00202 |
+| Bi-encoder    | 0.00009 ± 0.00002 | 0.00177 ± 0.00242 | 0.00963 ± 0.00202 |
 | Cross-encoder | 0.18913 ± 0.00231 | 1.91337 ± 0.00471 | 19.31912 ± 0.13923 |
