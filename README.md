@@ -80,7 +80,7 @@ In addition, the repository contains the first dataset for semantic textual simi
 ### Time performance analysis
 
 -  due to the representations being independent up until the cosine similarity. bi-encoders should have shorter inference times
--  mean and standard deviation in seconds for SVM + Floret, BERTić NER cross-encoder and bi-encoder multilingual BERT for 10, 100, and 1000 examples using 10 runs
+-  mean and standard deviation in seconds for BERTić NER cross-encoder and bi-encoder multilingual BERT for 10, 100, and 1000 examples using 10 runs
 
  
 | Model                                         | Training set    | Validation set      | Test set            |
